@@ -65,34 +65,44 @@ Siga os passos para configurar e executar a API no seu ambiente de desenvolvimen
 
 ### 3. Execução
 
-Inicie o servidor em modo de desenvolvimento (usando `nodemon` se estiver configurado):
-
-```bash
-npm start
-# ou se estiver usando nodemon
-npm run dev
+Inicie o servidor em modo de desenvolvimento (usando `nodemon` se estiver configurado): 
+    ```
+    bash
+    npm start
+    ```
+Ou se estiver usando nodemon
+    ```
+    npm run dev
+    ```
 A API estará rodando em http://localhost:3000.
 
 🧭 Endpoints Principais da API
+---
 Todos os endpoints requerem o header Content-Type: application/json.
-| Recurso | Método | Endpoint | Descrição da Ação |
-| :--- | :--- | :--- |
-| **`User`** | POST | /users | 👤 Cria um novo usuário (incluindo reviews aninhadas). |
-| **`User`** | GET | /users | 🔍 Lista todos ou busca usuários por query parameters. |
-| **`User`** | PUT | /users/:id | ✏️ Atualiza os dados de um usuário existente. |
-| **`User`** | DELETE | /users/:id | 🗑️ Deleta um usuário do sistema. |
-| **`Item`** | POST | /item | ➕ Adiciona uma nova mídia ao catálogo. |
-| **`Item`** | GET | /item | 📊 Lista o catálogo. Suporta filtros e calcula averageRating. |
-| **`Item`** | GET | /item/:id | "🔎 Retorna os detalhes de um item, incluindo as reviews recentes." |
-| **`Item`** | PUT | /item/:id | ⚙️ Atualiza os dados de um item específico.|
-| **`Item`** | DELETE | /item/:id | 💣 Remove um item e todas as reviews relacionadas. |
-| **`Review`** | POST | /reviews | ⭐ Cria uma nova avaliação (Review). |
-| **`Review`** | GET | /reviews | 📑 Busca reviews por itemId ou userId (via query parameters). |
-| **`Review`** | PUT | /reviews/:id | ✍️ Edita a review. Requer validação de propriedade (userId). |
-| **`Review`** | DELETE | /reviews/:id | 🗑️ Deleta a review. Requer validação de propriedade (userId). |
-🔐 Segurança e Autenticação
-(Nota: Se você planeja adicionar JWT ou Sessions)
-Autenticação: (Futuramente, pode ser implementado JWT para gerar um token após o login em /users).
-Autorização: As rotas PUT e DELETE em /reviews implementam validação de propriedade (where: {id: reviewId, userId: userId}) para garantir que usuários não editem o conteúdo de terceiros.
 
-👤 ContatoDesenvolvido por: Lvasp16rnd
+| Recurso | Método | Endpoint | Descrição da Ação |
+| --- | --- | --- | --- |
+| **`User`** | POST | `/users` | 👤 Cria um novo usuário (incluindo reviews aninhadas). |
+| **`User`** | GET | `/users` | 🔍 Lista todos ou busca usuários por query parameters. |
+| **`User`** | PUT | `/users/:id` | ✏️ Atualiza os dados de um usuário existente. |
+| **`User`** | DELETE | `/users/:id` | 🗑️ Deleta um usuário do sistema. |
+| **`Item`** | POST | `/item` | ➕ Adiciona uma nova mídia ao catálogo. |
+| **`Item`** | GET | `/item` | 📊 Lista o catálogo. Suporta filtros e calcula averageRating. |
+| **`Item`** | GET | `/item/:id` | "🔎 Retorna os detalhes de um item, incluindo as reviews recentes." |
+| **`Item`** | PUT | `/item/:id` | ⚙️ Atualiza os dados de um item específico.|
+| **`Item`** | DELETE | `/item/:id` | 💣 Remove um item e todas as reviews relacionadas. |
+| **`Review`** | POST | `/reviews` | ⭐ Cria uma nova avaliação (Review). |
+| **`Review`** | GET | `/reviews` | 📑 Busca reviews por itemId ou userId (via query parameters). |
+| **`Review`** | PUT | `/reviews/:id` | ✍️ Edita a review. Requer validação de propriedade (userId). |
+| **`Review`** | DELETE | `/reviews/:id` | 🗑️ Deleta a review. Requer validação de propriedade (userId). |
+
+---
+
+🔐 Segurança e Autenticação
+---
+(Nota: Se você planeja adicionar JWT ou Sessions)
+
+Autenticação: (Futuramente, pode ser implementado JWT para gerar um token após o login em /users).
+Autorização: As rotas PUT e DELETE em /reviews implementam validação de propriedade `(where: {id: reviewId, userId: userId})` para garantir que usuários não editem o conteúdo de terceiros.
+
+👤 ContatoDesenvolvido por: **Lvasp16rnd** - Lucas

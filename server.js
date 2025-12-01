@@ -477,4 +477,10 @@ app.delete('/item/:id', async (req, res)=>{
     }
 });
 
+// Seguindo a issue de Health Care Center
+// para atualizações de saúde na api
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
 app.listen(3000)

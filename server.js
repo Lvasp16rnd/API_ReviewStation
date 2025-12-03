@@ -1,6 +1,10 @@
 import express from 'express'
 import { PrismaClient } from '@prisma/client'
 import e from 'express'
+import dotenv from 'dotenv';
+dotenv.config();
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
 
 const prisma = new PrismaClient()
 
@@ -13,28 +17,126 @@ app.use(express.json())
 // put>editar varios , patch> editar um
 // delete>deletar
 
-app.post('/users', async (req, res)=>{
+// Middleware de Autenticação
+function authenticateToken(req, res, next) {
+    // Pega o cabeçalho 'Authorization'
+    // O Flutter enviará o token no formato: Bearer SEU_TOKEN_AQUI
+    const authHeader = req.headers['authorization'];
+    // Extrai o token do cabeçalho
+    // authHeader é undefined ou 'Bearer token'
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (token == null) {
+        return res.status(401).json({message: 'Unauthorized access, token not provided'});
+    }
+    // Verifica se o token é válido
+    jwt.verify(token, process.env.JWT_SECRET, (err, userPayload)=> {
     
-    try{
+        if (err) {
+            return res.status(403).json({ message: 'invalid token'});
+        }
+        // Token válido! Adiciona o payload (userId, email) à requisição
+        // Isso permite que as rotas subsequentes saibam quem é 
+        // o usuário logado
+        req.user = userPayload;
+        // Continua para a próxima função (o controller da rota)
+        next();
+    })
+}
+
+app.post('/users', async (req, res) => {
+    
+    const { email, name, age, password, reviews } = req.body;
+    
+    // Validação de Senha
+    if (!password || password.length < 6) {
+        return res.status(400).json({ message: 'A senha é obrigatória e deve ter no mínimo 6 caracteres.' });
+    }
+
+    try {
+        // Cria o hash da senha
+        // O '10' é o 'salt rounds', que define a complexidade da criptografia
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // 3. Salva o usuário no DB com o HASH
         const newUser = await prisma.user.create({
-            data:{
-                email: req.body.email,
-                name: req.body.name,
-                age: req.body.age,
+            data: {
+                email: email,
+                name: name,
+                age: age ? parseInt(age) : undefined,
+                password: hashedPassword, // <-- SALVA O HASH
                 reviews: {
-                    create: req.body.reviews || []
+                    create: reviews || []
                 }
             },
-            include:{
+            // Não inclua o campo password no retorno, mesmo sendo o hash
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                age: true,
                 reviews: true
             }
-        })
-        res.status(201).json(newUser)
-    }catch(error){
-        console.log(error)
-        res.status(400).json({message: 'Error creating user', error})
+        });
+        
+        res.status(201).json(newUser);
+        
+    } catch (error) {
+        console.log(error);
+        // Trata erro de email duplicado (se for o caso) ou outros erros de BD
+        res.status(400).json({ message: 'Error creating user. Check if the email is already in use.', error });
     }
-})
+});
+
+// Autentica o usuário e emite um JWT
+app.post(`/auth/login`, async (req, res) => {
+    const { email, password } = req.body;
+
+    if(!email || !password){
+        return res.status(400).json({message: 'Email and password are required'});
+    }
+
+    try{
+        const user = await prisma.user.findUnique({
+            where:{ email}
+        });
+        //Se o usuário não existe
+        if (!user){
+            return res.status(404).json({message: 'User not found'});
+        }
+
+        // Compara a senha fornecida com o hash armazenado
+        // bcrypt.compare() retorna true se baterem, false se não
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+
+        if (!isPasswordValid) {
+            return res.status(401).json({message: 'Invalid password'});
+        }
+        // Gera o JSON Web Token (JWT)
+        // O token contém informações essenciais 
+        // (payload), como o ID do usuário
+        const token = jwt.sign(
+            { userId: user.id, email: user.email },// Payload: O que o token carrega
+            process.env.JWT_SECRET, // Secret: A chave secreta do .env
+            { expiresIn: '7d' } // Expiração: O token é válido por 7 dias
+        );
+        // Retorna o token e os dados públicos do usuário
+        // O Flutter usará o token para todas as requisições autenticadas
+        res.status(200).json({
+            token,
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+                age: user.age
+            }
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({message: 'Error authenticating user', error});
+    }
+});
 
 app.get('/users', async (req, res)=>{
     let usuarios = []
@@ -69,9 +171,30 @@ app.get('/users', async (req, res)=>{
 // pela especificação do id, para puxar
 // esse id aleatório será criado uma 
 // variavel aqui
-app.put('/users/:id', async (req, res)=>{
+app.put('/users/:id', authenticateToken, async (req, res)=>{
+    const userIdToUpdate = req.params.id;
+
+    const authenticatedUserId = req.user.userId;
+    // O ID da URL DEVE ser igual ao ID do Token
+    if (userIdToUpdate !== authenticatedUserId) {
+        return res.status(403).json({ message: 'Acesso negado. Você só pode editar seu próprio perfil.' });
+    }
     
-    const {email, name, age, reviews} = req.body;
+    const {email, name, age} = req.body;
+    dataToUpdate = {};
+
+    if (name) dataToUpdate.name = name;
+    if (age) dataToUpdate.age = parseInt(age);
+    if (email) dataToUpdate.email = email;
+    // Se a senha for enviada, ela deve ser criptografada
+    if (password) {
+        const salt = await bcrypt.genSalt(10);
+        dataToUpdate.password = await bcrypt.hash(password, salt);
+    }
+    // Evita uso do banco se não houver dados para atualizar
+    if (Object.keys(dataToUpdate).length === 0) {
+        return res.status(400).json({ message: 'At least one field to update is required' });
+    }
 
     try{
         const updatedUser = await prisma.user.update({
@@ -79,46 +202,68 @@ app.put('/users/:id', async (req, res)=>{
         // passa o paramentro indentificador
         // o id, nesse caso referente ao
         //usuário
-        where:{
-            id: req.params.id
-        },
-        data:{
-            email: email,
-            name: name,
-            age: age
-        }
-    })
+        where: { id: userIdToUpdate }, // Onde o ID é o mesmo do token
+            data: dataToUpdate,
+            select: { // Retorna apenas os dados públicos
+                id: true,
+                email: true,
+                name: true,
+                age: true,
+            }
+    });
     res.status(200).json(updatedUser)
 
     }catch(error){
+        if (error.code === 'P2002') {
+            return res.status(400).json({ message: 'Email already in use' });
+        }
+        if (error.code === 'P2025') {
+            return res.status(404).json({ message: 'User not found' });
+        }
         console.log(error)
         res.status(404).json({message: 'Error updating user', error})
     }
-    
-
     res.status(201).json(req.body)
 })
 
-app.delete('/users/:id', async (req, res)=>{
+app.delete('/users/:id', authenticateToken, async (req, res)=>{
+    const userIdToDelete = req.params.id;
+    const authenticatedUserId = req.user.userId;
+
+    if (userIdToDelete !== authenticatedUserId) {
+        return res.status(403).json({message: 'Access denied. You can only delete your own profile.'});
+    }
+
     try{
-        await prisma.user.delete({
+        // Deletar as reviews associadas
+        await prisma.review.deleteMany({
         where:{
-            id: req.params.id
+            userId: userIdToDelete,
         }
-    })
+    });
+        // Deletar o usuário
+        await prisma.user.deleteMany({
+        where:{
+            userId: userIdToDelete,
+        }
+    });
     res.status(200).json({message:'User deleted successfully'})
     }catch(error){
-        console.log(error)
-        res.status(404).json({message: 'Error deleting user', error})
+        if (error.code === 'P2025') {
+            return res.status(404).json({message: 'User not found'});
+        }
+        console.log(error);
+        res.status(404).json({message: 'Error deleting user', error});
 
     }
     
     res.status(200).json({message:'User deleted successfully'})
 })
 
-app.post('/reviews', async (req, res)=>{
-
-    const {itemId,userId, rating,text,} = req.body;
+app.post('/reviews', authenticateToken, async (req, res)=>{
+    // Obter o ID do usuário de forma segura a partir do token
+    const authenticatedUserId = req.user.userId;
+    const { itemId, rating, text } = req.body;
 
     if(rating == undefined ||rating == null || rating < 1 || rating > 5){
         return res.status(400).json({message: 'Rating must be between 1 and 5'})
@@ -128,7 +273,7 @@ app.post('/reviews', async (req, res)=>{
         const newReview = await prisma.review.create({
             data:{
                 itemId: itemId,
-                userId: userId,
+                userId: authenticatedUserId, // USO SEGURO DO ID
                 rating: rating,
                 text: text
                 },
@@ -155,12 +300,10 @@ app.get('/reviews', async (req, res)=>{
     if(userId){
         where.userId = userId;
     }
-
     if(!itemId && !userId){
         // se nenhum filtro for passado, evitar listar reviews 
         return res.status(404).json({message: 'set an itemId or userId to search for reviews'})
     }
-
     try{
         //Busca no Prisma, ordenando pela mais recente e incluindo o nome do usuário
         const reviews = await prisma.review.findMany({
@@ -171,7 +314,6 @@ app.get('/reviews', async (req, res)=>{
                 user: {select:{name: true}}
 
             }
-
     });
     res.status(200).json(reviews);
     }catch(error){
@@ -180,9 +322,11 @@ app.get('/reviews', async (req, res)=>{
     }
 });
 
-app.put('/reviews/:id', async (req, res)=>{
+app.put('/reviews/:id', authenticateToken, async (req, res)=>{
+
     const reviewId = req.params.id;
-    const {userId, rating, text} = req.body;
+    const authenticatedUserId = req.user.userId;
+    const {rating, text} = req.body;
 
     if(!userId || (!rating && !text)){
         return res.status(400).json({message:'userId and (rating or text) are required'});
@@ -205,7 +349,7 @@ app.put('/reviews/:id', async (req, res)=>{
         const updatedReview = await prisma.review.update({
             where:{
                 id: reviewId,
-                userId: userId
+                userId: authenticatedUserId
             },
             data: dataToUpdate,
 
@@ -226,20 +370,16 @@ app.put('/reviews/:id', async (req, res)=>{
 
 });
 
-app.delete('/reviews/:id', async (req, res)=>{
+app.delete('/reviews/:id', authenticateToken, async (req, res)=>{
     const reviewId = req.params.id;
 
-    const {userId}= req.body;
-
-    if (!userId){
-        return res.status(400).json({message: 'userId is required'});
-    }
+    const authenticatedUserId = req.user.userId;
 
     try{
         await prisma.review.delete({
             where:{
                 id: reviewId,
-                userId: userId
+                userId: authenticatedUserId
             }
         });
         res.status(200).json({message: 'Review ${reviewId} deleted successfully'});
@@ -251,7 +391,6 @@ app.delete('/reviews/:id', async (req, res)=>{
         res.status(500).json({message: 'Error deleting review', error});
     }
 });
-
 
 //Adiciona um novo item (filme, livro, etc.) ao catálogo
 app.post('/item', async (req, res)=>{
@@ -399,7 +538,7 @@ app.get('/item/:id', async (req, res)=>{
     }
 });
 // Permite atualizar os dados de um item específico (Restrita a Admins na prática).
-app.put('/item/:id', async (req, res)=>{
+app.put('/item/:id', authenticateToken, async (req, res)=>{
     const itemId = req.params.id;
     // Desestruturar os campos do corpo da requisição
     const {title, description, type, releaseYear, genre, metadata} = req.body;
@@ -451,7 +590,7 @@ app.put('/item/:id', async (req, res)=>{
     }
 });
 //Permite remover um item do catálogo (Restrita a Admins na prática).
-app.delete('/item/:id', async (req, res)=>{
+app.delete('/item/:id', authenticateToken, async (req, res)=>{
     const itemId = req.params.id;
 
     try{

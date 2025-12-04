@@ -30,6 +30,7 @@ model Item{
   releaseYear Int
   type ITEM_TYPE
   metadata Json?
+  posterUrl String?
   reviews Review[]
 }
 

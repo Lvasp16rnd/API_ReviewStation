@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import cors from 'cors';
 
 const prisma = new PrismaClient()
 
@@ -12,6 +13,7 @@ const prisma = new PrismaClient()
 // criar, listar, editar e adicionar usuários
 const app = express()
 app.use(express.json())
+app.use(cors());
 // informações para a api
 // get>listar , post>criar , 
 // put>editar varios , patch> editar um

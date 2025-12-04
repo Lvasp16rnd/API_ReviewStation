@@ -501,7 +501,7 @@ app.get('/item/:id', async (req, res)=>{
                     include:{
                         //Inclui o nome do usuário que fez a review
                         user:{
-                            select:{name: true}
+                            select:{id: true, name: true}
                         }
                     }
                 }
@@ -529,7 +529,10 @@ app.get('/item/:id', async (req, res)=>{
                 rating: review.rating,
                 text: review.text,
                 createdAt: review.createdAt,
-                userName: review.user.name, // Pega o nome do usuário aninhado
+                author: {
+                  id: review.user.id, // Garante que o ID do usuário está presente
+                  fullName: review.user.name, // Mapeia para o nome do Prisma
+                }
             }))
         };
         // Retorna os detalhes do item formatado

@@ -11,6 +11,8 @@ Esta API é o backend de um aplicativo móvel (Flutter MVVMC), fornecendo endpoi
 * **Framework:** Express.js
 * **Banco de Dados:** MongoDB (NoSQL)
 * **ORM/Database Toolkit:** Prisma ORM
+*  **Autenticação:** JWT (JSON Web Tokens)
+*  **Segurança:** Bcryptjs e CORS
 * **Versionamento:** Git
 
 ---
@@ -22,7 +24,7 @@ O projeto é construído em torno de três modelos principais, conectados via Pr
 | Modelo | Descrição | Relacionamentos |
 | :--- | :--- | :--- |
 | **`User`** | Armazena dados de usuários e credenciais de acesso. | 1:N com `Review` |
-| **`Item`** | O catálogo de mídias (Filmes, Livros, Jogos). Inclui campos flexíveis (`metadata`). | 1:N com `Review` |
+| **`Item`** | O catálogo de mídias (Filmes, Livros, Jogos). Inclui campos flexíveis (`metadata`, `posterUrl`). | 1:N com `Review` |
 | **`Review`** | A avaliação em si (nota e texto). É o ponto de intersecção entre `User` e `Item`. | N:1 com `User` e N:1 com `Item` |
 
 ---
@@ -78,31 +80,37 @@ A API estará rodando em http://localhost:3000.
 
 🧭 Endpoints Principais da API
 ---
-Todos os endpoints requerem o header Content-Type: application/json.
+Todos os endpoints requerem o header `Content-Type: application/json`.
 
-| Recurso | Método | Endpoint | Descrição da Ação |
-| --- | --- | --- | --- |
-| **`User`** | POST | `/users` | 👤 Cria um novo usuário (incluindo reviews aninhadas). |
-| **`User`** | GET | `/users` | 🔍 Lista todos ou busca usuários por query parameters. |
-| **`User`** | PUT | `/users/:id` | ✏️ Atualiza os dados de um usuário existente. |
-| **`User`** | DELETE | `/users/:id` | 🗑️ Deleta um usuário do sistema. |
-| **`Item`** | POST | `/item` | ➕ Adiciona uma nova mídia ao catálogo. |
-| **`Item`** | GET | `/item` | 📊 Lista o catálogo. Suporta filtros e calcula averageRating. |
-| **`Item`** | GET | `/item/:id` | "🔎 Retorna os detalhes de um item, incluindo as reviews recentes." |
-| **`Item`** | PUT | `/item/:id` | ⚙️ Atualiza os dados de um item específico.|
-| **`Item`** | DELETE | `/item/:id` | 💣 Remove um item e todas as reviews relacionadas. |
-| **`Review`** | POST | `/reviews` | ⭐ Cria uma nova avaliação (Review). |
-| **`Review`** | GET | `/reviews` | 📑 Busca reviews por itemId ou userId (via query parameters). |
-| **`Review`** | PUT | `/reviews/:id` | ✍️ Edita a review. Requer validação de propriedade (userId). |
-| **`Review`** | DELETE | `/reviews/:id` | 🗑️ Deleta a review. Requer validação de propriedade (userId). |
+| Recurso | Método | Endpoint | Status JWT | Descrição da Ação |
+| --- | --- | --- | --- | --- |
+| **`Autenticação`** | POST | `/auth/login` | Público | 🔑 Login: Autentica o usuário e retorna o JWT. |
+| **`Autenticação`** | POST | `/users` | Público | 👤 Cria um novo usuário  |
+| **`User`** | PUT | `/users/:id` | **Privado** | ✏️ Atualiza os dados de um usuário existente. Requer Token. |
+| **`Item`** | POST | `/item` | Público | ➕ Adiciona uma nova mídia ao catálogo. |
+| **`Item`** | GET | `/item` | Público | 📊 Lista o catálogo. Suporta filtros e calcula averageRating. |
+| **`Item`** | GET | `/item/:id` | Público | "🔎 Retorna os detalhes de um item, incluindo as reviews recentes." |
+| **`Review`** | POST | `/reviews` | **Privado** | ⭐ Cria uma nova avaliação (Review). Requer Token. |
+| **`Review`** | PUT | `/reviews/:id` | **Privado** | ✍️ Edita a review. Requer validação de propriedade. |
+| **`Review`** | DELETE | `/reviews/:id` | **Privado** | 🗑️ Deleta a review. Requer validação de propriedade. |
 
 ---
 
 🔐 Segurança e Autenticação
 ---
-(Nota: Se você planeja adicionar JWT ou Sessions)
 
-Autenticação: (Futuramente, pode ser implementado JWT para gerar um token após o login em /users).
-Autorização: As rotas PUT e DELETE em /reviews implementam validação de propriedade `(where: {id: reviewId, userId: userId})` para garantir que usuários não editem o conteúdo de terceiros.
+### 1. JSON Web Tokens (JWT)
+
+A rota `/auth/login` emite um JWT válido por 7 dias. Todas as rotas marcadas como Privado implementam o middleware `authenticateToken`, que valida o token no header `Authorization: Bearer <token>`.
+
+### 2. Hash de Senhas
+
+As senhas dos usuários são armazenadas utilizando **Bcryptjs** (salt rounds 10), garantindo que as credenciais nunca sejam armazenadas em texto simples.
+
+### 3. Autorização (Validação de Propriedade)
+
+As rotas de manipulação (`PUT` e `DELETE`) em `/reviews` e `/users/:id` implementam validação de propriedade, garantindo que usuários só possam modificar ou deletar seu próprio conteúdo.
+
+---
 
 👤 ContatoDesenvolvido por: **Lvasp16rnd** - Lucas

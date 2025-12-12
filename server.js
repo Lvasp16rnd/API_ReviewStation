@@ -115,11 +115,36 @@ app.post(`/auth/login`, async (req, res) => {
         if (!isPasswordValid) {
             return res.status(401).json({message: 'Invalid password'});
         }
+
+        // LÓGICA DE BANIMENTO: Checa se há um banimento ativo
+        // isActive: true | expiresAt: deve ser maior que a data atual
+
+        const activeBan = await prisma.ban.findFirst({
+            where:{
+                userId: user.id,
+                isActive: true,
+                expiresAt: {gt: new Date()} // Data de expiração deve ser maior ou igual à data atual
+            },
+            orderBy: { banDate: 'desc'}
+        });
+
+        if (activeBan){
+            // user banido, retorna 403 (forbidden)
+            return res.status(403).json({
+                message: 'Você foi banido desta plataforma.',
+                reason: activeBan.reason,
+                expiresAt: activeBan.expiresAt,
+                adminComment: activeBan.adminComment,
+                // no Flutter, terá um redirect para uma tela de aviso
+                // ao receber 403 com banDetails
+            })
+        }
+
         // Gera o JSON Web Token (JWT)
         // O token contém informações essenciais 
         // (payload), como o ID do usuário
         const token = jwt.sign(
-            { userId: user.id, email: user.email },// Payload: O que o token carrega
+            { userId: user.id, email: user.email, isAdmin: user.isAdmin},// Payload: O que o token carrega
             process.env.JWT_SECRET, // Secret: A chave secreta do .env
             { expiresIn: '7d' } // Expiração: O token é válido por 7 dias
         );
@@ -131,7 +156,8 @@ app.post(`/auth/login`, async (req, res) => {
                 id: user.id,
                 email: user.email,
                 name: user.name,
-                age: user.age
+                age: user.age,
+                isAdmin: user.isAdmin,
             }
         });
     } catch (error) {
@@ -617,6 +643,93 @@ app.delete('/item/:id', authenticateToken, async (req, res)=>{
         res.status(500).json({message: 'Error deleting item', error});
     }
 });
+// Rota de Submissão de Item pelo usuário
+app.post('/submissions', async (req, res)=>{
+    //apenas o usuário irá solicitar
+    const authenticatedUserId= req.user.userId;
+    const { title, description, type, releaseYear, genre, metadata } = req.body;
+
+    try{
+        const newItem = await prisma.item.create({
+            data:{
+                title: title, description, type, releaseYear, genre, metadata,
+                // se o item for isAprroved ele será criado.
+                submittedByUser: authenticatedUserId,
+            },
+        });
+        res.status(201).json(newItem);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({message: 'Error submitting item', error});
+    }
+
+});
+// ROTA DO ADMIN
+async function authenticateAdmin(req, res, next){
+    // checar se logou 
+    if (!req.user || !req.user.userId){
+        return res.status(401).json({message: 'Unauthorized access'});
+    }
+    
+    // se admin 
+    req.adminUser = user;
+    next();
+}
+
+app.get('/admin/submissions', authenticateToken, authenticateAdmin, async (req, res)=>{
+    // buscar itens para aprovação
+    const pendingItems = await prisma.item.findMany({
+        where:{isApproved: false},
+        include:{ submittedBy: { select:{name: true, email: true}}}
+    });
+    return res.status(200).json(pendingItems);
+});
+
+// PATCH para aprovar ou negar item
+app.patch('/admin/submissions/:id', authenticateToken, authenticateAdmin, async (req, res)=>{
+    const {approve} = req.body; // verdadeiro ou falso
+
+    const updatedItem = await prisma.item.update({
+        where:{id: req.params.id},
+        data:{isApproved: approve === true},
+    });
+
+    // Se aprovado, ele aparece no /item. Se negado, ele permanece como
+    // isApproved: false (pode ser excluído depois)
+    return res.status(200).json(updatedItem);
+});
+
+// ROTA DE BAINMENTO
+
+//banir usuário
+app.post('/admin/ban/:userId', authenticateToken, authenticateAdmin, async (req, res) => {
+    const { resaon, adminComment}= req.body;
+    const expiresAt = new Date.now() + 90 * 24 * 60 * 60 * 1000; //90 dias
+
+    const newBan = await prisma.ban.create({
+        data:{
+            userId: req.params.userId,
+            reason,
+            adminComment,
+            expiresAt,
+            isActive: true,
+        },
+    });
+    return res.status(201).json(newBan);
+});
+
+// Deletar (excluir review por admin)
+app.delete('/admin/reviews/:reviewId', authenticateToken, authenticateAdmin, async (req, res)=>{
+    const {reason} = req.body;
+
+    //excluir review
+    await prisma.review.delete({ where: {id: req.params.reviewId} });
+
+    //PS: CRIAR log de moderação com o reason ***
+
+    return res.status(200).json({message: 'Review deleted successfully', reason});
+});
+    
 
 // Seguindo a issue de Health Care Center
 // para atualizações de saúde na api

@@ -644,36 +644,63 @@ app.delete('/item/:id', authenticateToken, async (req, res)=>{
     }
 });
 // Rota de Submissão de Item pelo usuário
-app.post('/submissions', async (req, res)=>{
+app.post('/submissions', authenticateToken, async (req, res)=>{
     //apenas o usuário irá solicitar
     const authenticatedUserId= req.user.userId;
     const { title, description, type, releaseYear, genre, metadata } = req.body;
 
+    if (!title || !type) {
+        return res.status(400).json({message: 'Title and type are required'});
+    }
+
     try{
         const newItem = await prisma.item.create({
             data:{
-                title: title, description, type, releaseYear, genre, metadata,
-                // se o item for isAprroved ele será criado.
-                submittedByUser: authenticatedUserId,
+                title: title,
+                description,
+                type: type.toUpperCase(),
+                releaseYear: releaseYear ? parseInt(releaseYear) : null,
+                genre,
+                metadata,
+                isApproved: false,
+                submittedByUserId: authenticatedUserId,
             },
         });
-        res.status(201).json(newItem);
+        return res.status(201).json(newItem);
     } catch (error) {
         console.error(error);
-        res.status(500).json({message: 'Error submitting item', error});
+        return res.status(500).json({message: 'Error submitting item', error});
     }
 
 });
 // ROTA DO ADMIN
-async function authenticateAdmin(req, res, next){
-    // checar se logou 
-    if (!req.user || !req.user.userId){
-        return res.status(401).json({message: 'Unauthorized access'});
+// Middleware de Autenticação de Admin 
+async function authenticateAdmin(req, res, next) {
+    // O payload do token já foi anexado a req.user (pelo authenticateToken)
+    if (!req.user || !req.user.userId) {
+        return res.status(401).json({ message: 'Unauthorized access: Token not found.' });
     }
     
-    // se admin 
-    req.adminUser = user;
-    next();
+    // Busca o usuário do DB para confirmar o status de Admin
+    try {
+        const adminData = await prisma.user.findUnique({ 
+            where: { id: req.user.userId },
+            select: { isAdmin: true } // Busca apenas o status de admin
+        });
+        
+        // Checa se o usuário é Admin (adminData.isAdmin é true)
+        if (!adminData || !adminData.isAdmin) {
+            return res.status(403).json({ message: 'Acesso negado. Requer privilégios de Administrador.' });
+        }
+        
+        //Se for Admin, continua
+        req.adminUser = adminData; // Opcional, mas útil para rotas futuras
+        next();
+        
+    } catch (error) {
+        console.error("Erro ao verificar Admin:", error);
+        return res.status(500).json({ message: 'Erro interno ao verificar permissões.' });
+    }
 }
 
 app.get('/admin/submissions', authenticateToken, authenticateAdmin, async (req, res)=>{
@@ -703,10 +730,14 @@ app.patch('/admin/submissions/:id', authenticateToken, authenticateAdmin, async 
 
 //banir usuário
 app.post('/admin/ban/:userId', authenticateToken, authenticateAdmin, async (req, res) => {
-    const { resaon, adminComment}= req.body;
-    const expiresAt = new Date.now() + 90 * 24 * 60 * 60 * 1000; //90 dias
+    const { reason, adminComment}= req.body;
+    const expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000); //90 dias
 
-    const newBan = await prisma.ban.create({
+    if (!reason) {
+        return res.status(400).json({ message: 'Reason for ban is required.' });
+    }
+    try {
+        const newBan = await prisma.ban.create({
         data:{
             userId: req.params.userId,
             reason,
@@ -716,6 +747,10 @@ app.post('/admin/ban/:userId', authenticateToken, authenticateAdmin, async (req,
         },
     });
     return res.status(201).json(newBan);
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ message: 'Error creating ban record.', error});
+    }
 });
 
 // Deletar (excluir review por admin)
